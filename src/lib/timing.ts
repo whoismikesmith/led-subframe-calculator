@@ -8,7 +8,8 @@ export type FrameRate = (typeof FRAME_RATES)[number];
  * - closeSlice is fixed (shutter stop reference, 1-indexed)
  * - Increasing captureSlices adds slices to the LEFT (earlier in time)
  * - Wrap-around is valid: if openSlice < 1 it wraps to the end of the frame
- * - sensorOffset = time when shutter opens = (openSlice - 1) * sliceDuration
+ * - sensorOffset = time when shutter CLOSES = closeSlice * sliceDuration
+ *   (the RED camera interprets sync shift as the close time, not open time)
  */
 export function calculateTimings(global: GlobalConfig, camera: CameraConfig): CameraTimings {
   const framePeriodMs = 1000 / global.fps;
@@ -20,7 +21,8 @@ export function calculateTimings(global: GlobalConfig, camera: CameraConfig): Ca
   const openSliceRaw = camera.closeSlice - camera.captureSlices + 1;
   const openSlice = ((openSliceRaw - 1 + global.sliceCount) % global.sliceCount) + 1;
   const shutterOpenMs = (openSlice - 1) * sliceDurationMs;
-  const sensorOffsetMs = shutterOpenMs;
+  const shutterCloseMs = camera.closeSlice * sliceDurationMs;
+  const sensorOffsetMs = shutterCloseMs;
   const sensorOffsetNs = sensorOffsetMs * 1_000_000;
   const sensorOffsetPs = Math.round(sensorOffsetMs * 1_000_000_000);
 
