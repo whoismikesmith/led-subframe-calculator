@@ -1,20 +1,41 @@
 import { useState, useEffect, useMemo } from 'react';
 import type { CameraConfig, GlobalConfig, CameraTimings, OffsetMethod, ShutterMode } from '../types';
-import { formatMs, formatPs, wholeSliceAngles } from '../lib/timing';
+import { formatMs, wholeSliceAngles } from '../lib/timing';
 import { EVERTZ_FORMATS, calculateEvertzOffset } from '../lib/evertz';
 
-const CELL_W = 56;
-const ROW_H  = 44;
+const CELL_W      = 56;
+const ROW_H       = 44;
+const LABEL_W     = 220;
+const ADD_BTN_W   = 40;
+const GHOST_SEP_W = 3;
+const GHOST_BG    = '#0c0f18';
+const SEP_COLOR   = '#1e2236';
+const GHOST_BORD  = '#111520';
+
+// Convert a hex color to a visible grayscale value via luminance
+function toGray(hex: string): string {
+  if (!hex.startsWith('#') || hex.length !== 7) return '#888888';
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  let lum = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+  lum = Math.max(95, Math.min(170, lum));
+  const h = lum.toString(16).padStart(2, '0');
+  return `#${h}${h}${h}`;
+}
 
 interface Props {
   camera: CameraConfig;
   global: GlobalConfig;
   timings: CameraTimings;
+  ghostCount: number;
   onUpdate: (camera: CameraConfig) => void;
   onDelete: () => void;
 }
 
-export default function CameraRow({ camera, global, timings, onUpdate, onDelete }: Props) {
+export default function CameraRow({ camera, global, timings, ghostCount, onUpdate, onDelete }: Props) {
+  const ghostColor = useMemo(() => toGray(camera.color), [camera.color]);
+
   const [hoverSlice, setHoverSlice] = useState<number | null>(null);
   const [closeRaw, setCloseRaw] = useState(String(camera.closeSlice));
   const [angleRaw, setAngleRaw] = useState(() => angleToRaw(camera.shutterAngleDeg, camera.shutterMode, global.fps));
@@ -82,6 +103,42 @@ export default function CameraRow({ camera, global, timings, onUpdate, onDelete 
 
   const capturedSet = useMemo(() => new Set(timings.capturedSlices), [timings.capturedSlices]);
 
+  // Ghost cells: sub-frames captured in the adjacent frame periods when shutter wraps
+  const leaderGhostSet = useMemo(() => {
+    if (!timings.isWrapped) return new Set<number>();
+    const set = new Set(timings.capturedSlices.filter(s => s > camera.closeSlice));
+    if (timings.partialOpenSlice !== null && timings.partialOpenSlice > camera.closeSlice) {
+      set.add(timings.partialOpenSlice);
+    }
+    return set;
+  }, [timings.isWrapped, timings.capturedSlices, timings.partialOpenSlice, camera.closeSlice]);
+
+  const trailerGhostSet = useMemo(() => {
+    if (!timings.isWrapped) return new Set<number>();
+    const set = new Set(timings.capturedSlices.filter(s => s <= camera.closeSlice));
+    if (timings.partialOpenSlice !== null && timings.partialOpenSlice <= camera.closeSlice) {
+      set.add(timings.partialOpenSlice);
+    }
+    return set;
+  }, [timings.isWrapped, timings.capturedSlices, timings.partialOpenSlice, camera.closeSlice]);
+
+  // Preview ghost sets: cyclical visualization — show preview wherever the
+  // captured SFs land in the visible leader/trailer ranges, independent of wrap.
+  const previewLeaderSet = useMemo(() => {
+    if (hoverSlice === null) return new Set<number>();
+    const minSF = global.sliceCount - ghostCount + 1;
+    const set = new Set<number>();
+    previewSlices.forEach(s => { if (s >= minSF) set.add(s); });
+    return set;
+  }, [hoverSlice, previewSlices, ghostCount, global.sliceCount]);
+
+  const previewTrailerSet = useMemo(() => {
+    if (hoverSlice === null) return new Set<number>();
+    const set = new Set<number>();
+    previewSlices.forEach(s => { if (s <= ghostCount) set.add(s); });
+    return set;
+  }, [hoverSlice, previewSlices, ghostCount]);
+
   const evertzResult = useMemo(() => {
     if (camera.offsetMethod !== 'evertz-genlock') return null;
     const fmt = EVERTZ_FORMATS.find((f) => f.id === global.evertzFormatId) ?? EVERTZ_FORMATS[0];
@@ -99,17 +156,16 @@ export default function CameraRow({ camera, global, timings, onUpdate, onDelete 
   return (
     <>
       {/* ── Main camera row ── */}
-      <div className="flex min-w-max border-t border-gray-800">
+      <div className="flex border-t border-gray-800" style={{ minWidth: '100%' }}>
         {/* Header — sticky left column */}
         <div
           className="flex-shrink-0 sticky left-0 z-10 bg-gray-950 flex items-center gap-2 px-3 border-r border-gray-800"
-          style={{ width: 220, height: ROW_H }}
+          style={{ width: LABEL_W, height: ROW_H }}
         >
           <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: camera.color }} />
           <span className="text-xs text-gray-300 flex-1 truncate">{camera.name}</span>
           <span className="text-xs text-gray-600 flex-shrink-0">
-            {captureStr}sf · {camera.shutterAngleDeg.toFixed(1)}°{timings.isWrapped ? ' ↩' : ''}
-          </span>
+            {captureStr}sf · {camera.shutterAngleDeg.toFixed(1)}°          </span>
           <button
             onClick={() => onUpdate({ ...camera, expanded: !camera.expanded })}
             className="text-gray-600 hover:text-gray-300 text-xs flex-shrink-0 px-1"
@@ -119,7 +175,45 @@ export default function CameraRow({ camera, global, timings, onUpdate, onDelete 
           </button>
         </div>
 
-        {/* Sub-frame cells */}
+        {/* Centering spacer (left) */}
+        <div style={{ flexGrow: 1, height: ROW_H, backgroundColor: GHOST_BG }} />
+
+        {/* Leader ghost cells (last N of previous frame) */}
+        {Array.from({ length: ghostCount }, (_, i) => {
+          const s = global.sliceCount - ghostCount + i + 1;
+          const captured = leaderGhostSet.has(s);
+          const isPreview = !captured && previewLeaderSet.has(s);
+          const isClose = s === camera.closeSlice;
+          const isHoverClose = s === hoverSlice;
+
+          let bg: string = GHOST_BG;
+          if (captured) bg = ghostColor;
+          else if (isPreview) bg = ghostColor + '66';
+
+          return (
+            <div
+              key={`l${s}`}
+              className="flex-shrink-0 cursor-pointer transition-colors"
+              style={{
+                width: CELL_W,
+                height: ROW_H,
+                backgroundColor: bg,
+                borderLeft: `1px solid ${GHOST_BORD}`,
+                borderTop: isClose
+                  ? '2px solid rgba(255,255,255,0.8)'
+                  : isHoverClose && !captured
+                  ? '2px solid rgba(255,255,255,0.3)'
+                  : '2px solid transparent',
+              }}
+              onMouseEnter={() => setHoverSlice(s)}
+              onMouseLeave={() => setHoverSlice(null)}
+              onClick={() => handleCellClick(s)}
+            />
+          );
+        })}
+        <div className="flex-shrink-0" style={{ width: GHOST_SEP_W, height: ROW_H, backgroundColor: SEP_COLOR }} />
+
+        {/* ── Current frame cells ── */}
         {Array.from({ length: global.sliceCount }, (_, i) => {
           const s = i + 1;
           const captured   = capturedSet.has(s);
@@ -165,14 +259,51 @@ export default function CameraRow({ camera, global, timings, onUpdate, onDelete 
           );
         })}
 
-        <div className="flex-shrink-0" style={{ width: 40, height: ROW_H }} />
+        <div className="flex-shrink-0" style={{ width: GHOST_SEP_W, height: ROW_H, backgroundColor: SEP_COLOR }} />
+        {/* Trailer ghost cells (first N of next frame) */}
+        {Array.from({ length: ghostCount }, (_, i) => {
+          const s = i + 1;
+          const captured = trailerGhostSet.has(s);
+          const isPreview = !captured && previewTrailerSet.has(s);
+          const isClose = s === camera.closeSlice;
+          const isHoverClose = s === hoverSlice;
+
+          let bg: string = GHOST_BG;
+          if (captured) bg = ghostColor;
+          else if (isPreview) bg = ghostColor + '66';
+
+          return (
+            <div
+              key={`t${s}`}
+              className="flex-shrink-0 cursor-pointer transition-colors"
+              style={{
+                width: CELL_W,
+                height: ROW_H,
+                backgroundColor: bg,
+                borderLeft: `1px solid ${GHOST_BORD}`,
+                borderTop: isClose
+                  ? '2px solid rgba(255,255,255,0.8)'
+                  : isHoverClose && !captured
+                  ? '2px solid rgba(255,255,255,0.3)'
+                  : '2px solid transparent',
+              }}
+              onMouseEnter={() => setHoverSlice(s)}
+              onMouseLeave={() => setHoverSlice(null)}
+              onClick={() => handleCellClick(s)}
+            />
+          );
+        })}
+
+        {/* Centering spacer (right) */}
+        <div style={{ flexGrow: 1, height: ROW_H, backgroundColor: GHOST_BG }} />
+        <div className="flex-shrink-0 sticky right-0 z-10 bg-gray-950" style={{ width: ADD_BTN_W, height: ROW_H }} />
       </div>
 
       {/* ── Expanded settings ── */}
       {camera.expanded && (
-        <div className="flex min-w-max border-t border-gray-800 bg-gray-900">
+        <div className="flex border-t border-gray-800 bg-gray-900" style={{ minWidth: '100%' }}>
           {/* Sticky left column filler */}
-          <div className="flex-shrink-0 sticky left-0 z-10 bg-gray-900 border-r border-gray-800" style={{ width: 220 }} />
+          <div className="flex-shrink-0 sticky left-0 z-10 bg-gray-900 border-r border-gray-800" style={{ width: LABEL_W }} />
 
           <div className="flex flex-wrap items-start gap-5 px-4 py-3">
 
@@ -207,19 +338,19 @@ export default function CameraRow({ camera, global, timings, onUpdate, onDelete 
             {/* ── Shutter input ── */}
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center justify-between gap-2">
-                <label className="text-xs text-gray-500">Shutter</label>
+                <label className="text-xs text-gray-500">Shutter Mode</label>
                 <div className="flex rounded overflow-hidden border border-gray-700 text-xs">
                   {(['angle', 'speed'] as ShutterMode[]).map((m) => (
                     <button
                       key={m}
                       onClick={() => handleModeSwitch(m)}
-                      className={`px-2 py-0.5 transition-colors ${
+                      className={`px-2.5 py-0.5 transition-colors ${
                         camera.shutterMode === m
                           ? 'bg-gray-600 text-gray-100'
                           : 'bg-gray-800 text-gray-500 hover:text-gray-300'
                       }`}
                     >
-                      {m === 'angle' ? '°' : '1/N'}
+                      {m === 'angle' ? 'Angle' : 'Speed'}
                     </button>
                   ))}
                 </div>
@@ -261,7 +392,7 @@ export default function CameraRow({ camera, global, timings, onUpdate, onDelete 
               </div>
               {timings.partialOpenSlice !== null && (
                 <div className="text-amber-400 text-xs bg-amber-950/30 border border-amber-900/50 rounded px-2 py-1">
-                  ⚠ Partial: SF{timings.partialOpenSlice} ({(timings.partialOpenFraction * 100).toFixed(1)}% captured)
+                  Partial: SF{timings.partialOpenSlice} ({(timings.partialOpenFraction * 100).toFixed(1)}% captured)
                 </div>
               )}
             </div>
@@ -291,8 +422,7 @@ export default function CameraRow({ camera, global, timings, onUpdate, onDelete 
             <div className="flex flex-col gap-1">
               <span className="text-xs text-gray-500">Open Sub-frame</span>
               <span className="text-xs text-gray-200 font-mono">
-                {timings.openSlice}{timings.isWrapped ? ' ↩' : ''}
-              </span>
+                {timings.openSlice}              </span>
             </div>
 
             <div className="w-px self-stretch bg-gray-700" />
@@ -319,16 +449,26 @@ export default function CameraRow({ camera, global, timings, onUpdate, onDelete 
 
             <div className="w-px self-stretch bg-gray-700" />
 
+            <div className="w-px self-stretch bg-gray-700" />
+
+            <button
+              onClick={() => { if (window.confirm(`Delete "${camera.name}"?`)) onDelete(); }}
+              className="text-xs text-gray-500 hover:text-red-400 border border-gray-700 hover:border-red-800 px-2 py-1 rounded transition-colors self-center"
+            >
+              Delete
+            </button>
+
+            <div className="w-px self-stretch bg-gray-700" />
+
             {/* ── Offset output values ── */}
             <div className="flex flex-col gap-1">
               <span className="text-xs text-gray-500">Required Offset</span>
               <span className="text-xs text-gray-200 font-mono">{formatMs(timings.sensorOffsetMs)}</span>
 
               {camera.offsetMethod === 'red-sensor' ? (
-                <>
-                  <span className="text-xs text-gray-500 font-mono">{formatPs(timings.sensorOffsetPs)}</span>
-                  <span className="text-xs text-gray-700 leading-tight">SENSOR_SYNC_OFFSET</span>
-                </>
+                <span className="text-xs text-gray-400 font-mono">
+                  Sync Shift: {Math.round(timings.sensorOffsetPs / 13468).toLocaleString()}
+                </span>
               ) : evertzResult ? (
                 <>
                   <span className="text-xs text-gray-400 font-mono">
@@ -338,23 +478,6 @@ export default function CameraRow({ camera, global, timings, onUpdate, onDelete 
                 </>
               ) : null}
             </div>
-
-            {camera.offsetMethod === 'red-sensor' && (
-              <div className="flex flex-col gap-1">
-                <span className="text-xs text-gray-500">RCP2 Angle Value</span>
-                <span className="text-xs text-gray-300 font-mono">{timings.shutterAngleRcp2.toLocaleString()}</span>
-                <span className="text-xs text-gray-600">deg × 1000</span>
-              </div>
-            )}
-
-            <div className="w-px self-stretch bg-gray-700" />
-
-            <button
-              onClick={onDelete}
-              className="text-xs text-gray-500 hover:text-red-400 border border-gray-700 hover:border-red-800 px-2 py-1 rounded transition-colors self-center"
-            >
-              Delete
-            </button>
           </div>
         </div>
       )}

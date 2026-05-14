@@ -210,23 +210,9 @@ export default function TimingPanel({ global, cameras, timingsMap, onGlobalChang
 
               <Row label="Required Offset" value={formatValue(t.sensorOffsetMs)} highlight />
 
-              {cam.offsetMethod === 'red-sensor' ? (() => {
-                const syncShift = Math.round(t.sensorOffsetPs / 13468);
-                const syncShiftTimeUs = syncShift * 0.013468;
-                return (
-                  <>
-                    <Row label="Sync Shift" value={syncShift.toLocaleString()} highlight bold />
-                    <Row label="Sync Shift Time" value={`${syncShiftTimeUs.toFixed(4)}µs`} />
-                    <Row label="Time Unit" value="0.013468µs" />
-                    <div className="border-t border-gray-800 pt-1 mt-1" />
-                    <div>
-                      <span className="text-gray-600 block mb-0.5">RCP2 Angle</span>
-                      <span className="font-mono text-gray-400">{t.shutterAngleRcp2.toLocaleString()}</span>
-                      <span className="text-gray-700 ml-1">× 1000</span>
-                    </div>
-                  </>
-                );
-              })() : evertz && fmt ? (
+              {cam.offsetMethod === 'red-sensor' ? (
+                <Row label="Sync Shift" value={Math.round(t.sensorOffsetPs / 13468).toLocaleString()} highlight bold />
+              ) : evertz && fmt ? (
                 <>
                   <div className="border-t border-gray-800 pt-1 mt-1" />
                   <div className="mb-1">
@@ -250,7 +236,7 @@ export default function TimingPanel({ global, cameras, timingsMap, onGlobalChang
 
               {t.isWrapped && (
                 <div className="text-amber-400 text-xs mt-1 bg-amber-950/30 border border-amber-900/50 rounded px-2 py-1">
-                  ↩ Wraps: opens at sub-frame {t.openSlice}
+                  Wraps: opens at sub-frame {t.openSlice}
                 </div>
               )}
             </div>
