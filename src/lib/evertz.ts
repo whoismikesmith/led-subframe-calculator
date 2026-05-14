@@ -1,18 +1,17 @@
 /**
  * Evertz 5601 MSC (and 5600 MSC family) genlock offset model.
  *
- * The per-output sync phase offset has three tiers, all referenced to the
- * FULL raster including blanking (SMPTE ST 274 / ST 296):
+ * The per-output sync phase offset has three tiers (Vert phase / Hor phase / Fine phase),
+ * all referenced to the FULL raster including blanking (SMPTE ST 274 / ST 296):
  *
- *   Pixel (P)  = 1 sample clock period = 1 / clockHz
- *   H-line     = samplesPerLine × pixel
- *   V-line     = totalLines × H-line = 1 / fps  (full frame, not field)
+ *   V (lines)   = complete horizontal lines from frame start (0-indexed, 0 to totalLines-1)
+ *   H (samples) = complete samples from start of that line (0-indexed, 0 to samplesPerLine-1)
+ *   Fine%       = sub-sample fraction as percentage (0.0% for integer-sample targets)
  *
  * The clock is derived from the format:  clockHz = fps × samplesPerLine × totalLines
  * This works for fractional rates (23.976 = 24000/1001) automatically.
  *
- * For LED volume work V will always be 0 — the offset is always sub-frame.
- * The useful controls are H (lines) and P (pixels).
+ * Confirmed empirically: 10ms offset at 1080p/50 → V=562, H=1320, Fine=0.0%
  */
 
 export interface EvertzFormat {
@@ -47,13 +46,12 @@ export const EVERTZ_FORMATS: EvertzFormat[] = [
 ];
 
 export interface EvertzOffsetResult {
-  frames: number;         // V — full-frame offsets (0 for LED volume work)
-  lines: number;          // H — line offsets within the frame (0 to totalLines-1)
-  pixels: number;         // P — pixel offsets within the line (0 to samplesPerLine-1)
-  pixelPeriodNs: number;  // nanoseconds per pixel (e.g. 13.47 ns at 74.25 MHz)
+  vLines: number;         // V — complete lines from frame start (0-indexed, enter as Vert phase)
+  hSamples: number;       // H — complete samples within that line (0-indexed, enter as Hor phase)
+  pixelPeriodNs: number;  // nanoseconds per sample clock
   linePeriodUs: number;   // microseconds per H-line
   framePeriodMs: number;  // milliseconds per frame (sanity: should equal 1000/fps)
-  actualOffsetMs: number; // offset after rounding to nearest pixel
+  actualOffsetMs: number; // offset after rounding to nearest sample
   roundingErrorNs: number;
 }
 
@@ -68,18 +66,16 @@ export function calculateEvertzOffset(
 
   const totalPixels = Math.round(offsetMs / pixelPeriodMs);
 
-  const rawTotalLines = Math.floor(totalPixels / format.samplesPerLine);
-  const pixels  = totalPixels % format.samplesPerLine;
-  const frames  = Math.floor(rawTotalLines / format.totalLines);
-  const lines   = rawTotalLines % format.totalLines;
+  const totalLines = Math.floor(totalPixels / format.samplesPerLine);
+  const vLines  = totalLines % format.totalLines;
+  const hSamples = totalPixels % format.samplesPerLine;
 
   const actualOffsetMs   = totalPixels * pixelPeriodMs;
   const roundingErrorNs  = (offsetMs - actualOffsetMs) * 1_000_000;
 
   return {
-    frames,
-    lines,
-    pixels,
+    vLines,
+    hSamples,
     pixelPeriodNs:  pixelPeriodMs  * 1_000_000,
     linePeriodUs:   linePeriodMs   * 1_000,
     framePeriodMs,

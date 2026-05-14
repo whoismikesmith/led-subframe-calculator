@@ -124,9 +124,9 @@ export default function TimingPanel({ global, cameras, timingsMap }: Props) {
                   <div className="mb-1">
                     <span className="text-gray-500 block">{fmt.name}</span>
                   </div>
-                  <Row label="V (frames)" value={String(evertz.frames)} />
-                  <Row label="H (lines)" value={String(evertz.lines)} />
-                  <Row label="Fine" value={`${((evertz.pixels / fmt.samplesPerLine) * 100).toFixed(1)}%`} />
+                  <Row label="V (lines)" value={String(evertz.vLines)} />
+                  <Row label="H (samples)" value={String(evertz.hSamples)} />
+                  <Row label="Fine" value="0.0%" />
                   <div className="border-t border-gray-800 pt-1 mt-1" />
                   <Row label="Pixel period" value={`${evertz.pixelPeriodNs.toFixed(3)}ns`} />
                   <Row label="H-line period" value={`${evertz.linePeriodUs.toFixed(3)}µs`} />

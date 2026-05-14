@@ -255,7 +255,7 @@ export default function CameraRow({ camera, global, timings, onUpdate, onDelete 
               ) : evertzResult ? (
                 <>
                   <span className="text-xs text-gray-400 font-mono">
-                    {evertzResult.lines}L · {evertzResult.pixels}px
+                    V{evertzResult.vLines} H{evertzResult.hSamples}
                   </span>
                   <span className="text-xs text-gray-700">5601 MSC output delay</span>
                 </>
