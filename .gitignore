@@ -3,4 +3,5 @@ dist
 .env
 .env.local
 .DS_Store
+.claude/
 RED RCP2 Parameters and Protocol 2025/

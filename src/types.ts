@@ -1,13 +1,16 @@
 export type CameraType = 'komodo';
+export type OffsetMethod = 'red-sensor' | 'evertz-genlock';
 
 export interface CameraConfig {
   id: string;
   name: string;
   color: string;
   type: CameraType;
-  captureSlices: number; // how many slices this camera captures (drives shutter angle)
-  closeSlice: number;    // 1-indexed: the last (rightmost) slice the shutter covers
+  captureSlices: number;    // how many sub-frames this camera captures (drives shutter angle)
+  closeSlice: number;       // 1-indexed: the last (rightmost) sub-frame the shutter covers
   expanded: boolean;
+  offsetMethod: OffsetMethod;
+  evertzFormatId: string;   // EVERTZ_FORMATS id, e.g. '1080p24'
 }
 
 export interface GlobalConfig {

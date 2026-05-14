@@ -2,6 +2,7 @@ import { useMemo, useState, useCallback } from 'react';
 import type { CameraConfig, GlobalConfig } from './types';
 import { calculateTimings } from './lib/timing';
 import { nextColor } from './lib/cameras';
+import { bestEvertzFormatId } from './lib/evertz';
 import GlobalSettings from './components/GlobalSettings';
 import SliceGrid from './components/SliceGrid';
 import TimingPanel from './components/TimingPanel';
@@ -50,6 +51,8 @@ export default function App() {
       captureSlices: defaultCapture,
       closeSlice: defaultClose,
       expanded: true,
+      offsetMethod: 'red-sensor',
+      evertzFormatId: bestEvertzFormatId(global.fps),
     };
     setCameras((prev) => [...prev, newCam]);
   }, [cameras, global]);

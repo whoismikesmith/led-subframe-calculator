@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import type { CameraConfig, GlobalConfig, CameraTimings } from '../types';
 import { sliceStartMs, formatPs } from '../lib/timing';
+import { EVERTZ_FORMATS, calculateEvertzOffset } from '../lib/evertz';
+import type { EvertzOffsetResult } from '../lib/evertz';
 
 type DisplayUnit = 'ms' | 'us' | 'ns';
 
@@ -14,6 +16,16 @@ export default function TimingPanel({ global, cameras, timingsMap }: Props) {
   const [unit, setUnit] = useState<DisplayUnit>('ms');
 
   const sliceDurationMs = (1000 / global.fps) / global.sliceCount;
+
+  const evertzResultsMap = useMemo(() => {
+    const map: Record<string, EvertzOffsetResult | null> = {};
+    for (const cam of cameras) {
+      if (cam.offsetMethod !== 'evertz-genlock') { map[cam.id] = null; continue; }
+      const fmt = EVERTZ_FORMATS.find((f) => f.id === cam.evertzFormatId) ?? EVERTZ_FORMATS[0];
+      map[cam.id] = calculateEvertzOffset(timingsMap[cam.id].sensorOffsetMs, fmt);
+    }
+    return map;
+  }, [cameras, timingsMap]);
 
   function formatValue(ms: number): string {
     switch (unit) {
@@ -61,9 +73,14 @@ export default function TimingPanel({ global, cameras, timingsMap }: Props) {
       {/* Per-camera results */}
       {cameras.map((cam) => {
         const t = timingsMap[cam.id];
+        const evertz = evertzResultsMap[cam.id];
+        const fmt = cam.offsetMethod === 'evertz-genlock'
+          ? (EVERTZ_FORMATS.find((f) => f.id === cam.evertzFormatId) ?? EVERTZ_FORMATS[0])
+          : null;
+        const isWrapped = t.openSlice > cam.closeSlice;
+
         return (
           <div key={cam.id} className="px-4 py-3 border-b border-gray-800">
-            {/* Camera label */}
             <div className="flex items-center gap-2 mb-2">
               <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: cam.color }} />
               <span className="text-xs text-gray-300 font-medium truncate">{cam.name}</span>
@@ -73,7 +90,7 @@ export default function TimingPanel({ global, cameras, timingsMap }: Props) {
               <Row
                 label="Sub-frames"
                 value={
-                  t.openSlice > cam.closeSlice
+                  isWrapped
                     ? `${cam.captureSlices} (${t.openSlice}→${global.sliceCount}, 1→${cam.closeSlice})`
                     : `${cam.captureSlices} (${t.openSlice}→${cam.closeSlice})`
                 }
@@ -83,29 +100,51 @@ export default function TimingPanel({ global, cameras, timingsMap }: Props) {
 
               <div className="border-t border-gray-800 pt-1 mt-1" />
 
-              <Row label="Sensor Offset" value={formatValue(t.sensorOffsetMs)} highlight />
-              <div className="pl-0">
-                <span className="text-gray-600">Picoseconds</span>
-                <div className="font-mono text-gray-300 mt-0.5 break-all">
-                  {formatPs(t.sensorOffsetPs)}
-                </div>
-              </div>
+              <Row label="Required Offset" value={formatValue(t.sensorOffsetMs)} highlight />
 
-              <div className="border-t border-gray-800 pt-1 mt-1" />
+              {cam.offsetMethod === 'red-sensor' ? (
+                <>
+                  <div>
+                    <span className="text-gray-600">Picoseconds</span>
+                    <div className="font-mono text-gray-300 mt-0.5 break-all">
+                      {formatPs(t.sensorOffsetPs)}
+                    </div>
+                  </div>
+                  <div className="border-t border-gray-800 pt-1 mt-1" />
+                  <div>
+                    <span className="text-gray-600 block mb-0.5">RCP2 Angle</span>
+                    <span className="font-mono text-gray-400">{t.shutterAngleRcp2.toLocaleString()}</span>
+                    <span className="text-gray-700 ml-1">× 1000</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-700 break-all leading-tight font-mono">
+                      SENSOR_SYNC_OFFSET_PIXELS
+                    </span>
+                  </div>
+                </>
+              ) : evertz && fmt ? (
+                <>
+                  <div className="border-t border-gray-800 pt-1 mt-1" />
+                  <div className="mb-1">
+                    <span className="text-gray-500 block">{fmt.name}</span>
+                  </div>
+                  <Row label="V (frames)" value={String(evertz.frames)} />
+                  <Row label="H (lines)" value={String(evertz.lines)} />
+                  <Row label="P (pixels)" value={String(evertz.pixels)} />
+                  <div className="border-t border-gray-800 pt-1 mt-1" />
+                  <Row label="Pixel period" value={`${evertz.pixelPeriodNs.toFixed(3)}ns`} />
+                  <Row label="H-line period" value={`${evertz.linePeriodUs.toFixed(3)}µs`} />
+                  <div className="border-t border-gray-800 pt-1 mt-1" />
+                  <Row label="Actual offset" value={`${evertz.actualOffsetMs.toFixed(4)}ms`} />
+                  <Row
+                    label="Rounding error"
+                    value={`${evertz.roundingErrorNs.toFixed(2)}ns`}
+                    dim={Math.abs(evertz.roundingErrorNs) > 10}
+                  />
+                </>
+              ) : null}
 
-              <div>
-                <span className="text-gray-600 block mb-0.5">RCP2 Angle Value</span>
-                <span className="font-mono text-gray-400">{t.shutterAngleRcp2.toLocaleString()}</span>
-              </div>
-
-              <div>
-                <span className="text-gray-600 block">RCP2 Param (set)</span>
-                <span className="font-mono text-gray-600 text-xs break-all leading-tight">
-                  SENSOR_SYNC_OFFSET_PIXELS
-                </span>
-              </div>
-
-              {t.openSlice > cam.closeSlice && (
+              {isWrapped && (
                 <div className="text-amber-400 text-xs mt-1 bg-amber-950/30 border border-amber-900/50 rounded px-2 py-1">
                   ↩ Wraps: opens at sub-frame {t.openSlice}
                 </div>

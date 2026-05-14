@@ -1,9 +1,10 @@
 import { useState, useMemo } from 'react';
-import type { CameraConfig, GlobalConfig, CameraTimings } from '../types';
+import type { CameraConfig, GlobalConfig, CameraTimings, OffsetMethod } from '../types';
 import { formatMs, formatPs } from '../lib/timing';
+import { EVERTZ_FORMATS, calculateEvertzOffset } from '../lib/evertz';
 
 const CELL_W = 56;
-const ROW_H = 44;
+const ROW_H  = 44;
 
 interface Props {
   camera: CameraConfig;
@@ -16,7 +17,7 @@ interface Props {
 export default function CameraRow({ camera, global, timings, onUpdate, onDelete }: Props) {
   const [hoverSlice, setHoverSlice] = useState<number | null>(null);
 
-  // Build the set of slices that would be captured if hoverSlice became the closeSlice
+  // Preview: which sub-frames would be captured if hoverSlice were the new closeSlice?
   const previewSlices = useMemo(() => {
     if (hoverSlice === null) return new Set<number>();
     const n = global.sliceCount;
@@ -34,10 +35,16 @@ export default function CameraRow({ camera, global, timings, onUpdate, onDelete 
     [timings.capturedSlices]
   );
 
-  function isCaptured(s: number) { return capturedSet.has(s); }
-  function isPreview(s: number) { return !capturedSet.has(s) && previewSlices.has(s); }
+  // Evertz offset — only computed when method is evertz-genlock
+  const evertzResult = useMemo(() => {
+    if (camera.offsetMethod !== 'evertz-genlock') return null;
+    const fmt = EVERTZ_FORMATS.find((f) => f.id === camera.evertzFormatId) ?? EVERTZ_FORMATS[0];
+    return calculateEvertzOffset(timings.sensorOffsetMs, fmt);
+  }, [camera.offsetMethod, camera.evertzFormatId, timings.sensorOffsetMs]);
 
-  // Any slice is a valid close slice — wrap-around handles the rest
+  function isCaptured(s: number) { return capturedSet.has(s); }
+  function isPreview(s: number)  { return !capturedSet.has(s) && previewSlices.has(s); }
+
   function handleCellClick(s: number) {
     onUpdate({ ...camera, closeSlice: s });
   }
@@ -46,17 +53,14 @@ export default function CameraRow({ camera, global, timings, onUpdate, onDelete 
 
   return (
     <>
-      {/* Main camera row */}
-      <div className="flex min-w-max border-t border-gray-800 group">
+      {/* ── Main camera row ── */}
+      <div className="flex min-w-max border-t border-gray-800">
         {/* Header — sticky left column */}
         <div
           className="flex-shrink-0 sticky left-0 z-10 bg-gray-950 flex items-center gap-2 px-3 border-r border-gray-800"
           style={{ width: 220, height: ROW_H }}
         >
-          <div
-            className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-            style={{ backgroundColor: camera.color }}
-          />
+          <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: camera.color }} />
           <span className="text-xs text-gray-300 flex-1 truncate">{camera.name}</span>
           <span className="text-xs text-gray-600 flex-shrink-0">
             {camera.captureSlices}sf · {timings.shutterAngleDeg.toFixed(1)}°{isWrapped ? ' ↩' : ''}
@@ -70,13 +74,13 @@ export default function CameraRow({ camera, global, timings, onUpdate, onDelete 
           </button>
         </div>
 
-        {/* Slice cells */}
+        {/* Sub-frame cells */}
         {Array.from({ length: global.sliceCount }, (_, i) => {
           const s = i + 1;
-          const captured = isCaptured(s);
-          const preview = isPreview(s);
-          const isClose = s === camera.closeSlice;
-          const isOpen = s === timings.openSlice;
+          const captured  = isCaptured(s);
+          const preview   = isPreview(s);
+          const isClose   = s === camera.closeSlice;
+          const isOpen    = s === timings.openSlice;
           const isHoverClose = s === hoverSlice;
 
           let bg = '#1c1f2e';
@@ -102,39 +106,30 @@ export default function CameraRow({ camera, global, timings, onUpdate, onDelete 
               onMouseLeave={() => setHoverSlice(null)}
               onClick={() => handleCellClick(s)}
             >
-              {/* Open slice marker */}
               {isOpen && !isClose && (
-                <div
-                  className="absolute left-0 top-0 bottom-0 w-0.5"
-                  style={{ backgroundColor: 'rgba(255,255,255,0.5)' }}
-                />
+                <div className="absolute left-0 top-0 bottom-0 w-0.5" style={{ backgroundColor: 'rgba(255,255,255,0.5)' }} />
               )}
             </div>
           );
         })}
 
-        {/* Spacer to align with add-column button */}
         <div className="flex-shrink-0" style={{ width: 40, height: ROW_H }} />
       </div>
 
-      {/* Expanded settings */}
+      {/* ── Expanded settings ── */}
       {camera.expanded && (
         <div className="flex min-w-max border-t border-gray-800 bg-gray-900">
-          {/* Sticky left column */}
-          <div
-            className="flex-shrink-0 sticky left-0 z-10 bg-gray-900 border-r border-gray-800"
-            style={{ width: 220 }}
-          />
+          {/* Sticky left column filler */}
+          <div className="flex-shrink-0 sticky left-0 z-10 bg-gray-900 border-r border-gray-800" style={{ width: 220 }} />
 
-          {/* Settings content */}
-          <div className="flex flex-wrap items-end gap-5 px-4 py-3">
-            {/* Camera type */}
+          <div className="flex flex-wrap items-start gap-5 px-4 py-3">
+
+            {/* ── Identity ── */}
             <div className="flex flex-col gap-1">
               <span className="text-xs text-gray-500">Camera</span>
               <span className="text-xs text-gray-300">RED Komodo 6K</span>
             </div>
 
-            {/* Name */}
             <div className="flex flex-col gap-1">
               <label className="text-xs text-gray-500">Name</label>
               <input
@@ -145,7 +140,6 @@ export default function CameraRow({ camera, global, timings, onUpdate, onDelete 
               />
             </div>
 
-            {/* Color */}
             <div className="flex flex-col gap-1">
               <label className="text-xs text-gray-500">Color</label>
               <input
@@ -156,9 +150,9 @@ export default function CameraRow({ camera, global, timings, onUpdate, onDelete 
               />
             </div>
 
-            <div className="w-px h-8 bg-gray-700 self-center" />
+            <div className="w-px self-stretch bg-gray-700" />
 
-            {/* Capture sub-frames */}
+            {/* ── Timing ── */}
             <div className="flex flex-col gap-1">
               <label className="text-xs text-gray-500">Capture Sub-frames</label>
               <input
@@ -174,7 +168,6 @@ export default function CameraRow({ camera, global, timings, onUpdate, onDelete 
               />
             </div>
 
-            {/* Close sub-frame (click on grid or type) */}
             <div className="flex flex-col gap-1">
               <label className="text-xs text-gray-500">Close Sub-frame</label>
               <input
@@ -190,36 +183,94 @@ export default function CameraRow({ camera, global, timings, onUpdate, onDelete 
               />
             </div>
 
-            {/* Derived: shutter angle */}
             <div className="flex flex-col gap-1">
               <span className="text-xs text-gray-500">Shutter Angle</span>
               <span className="text-xs text-gray-200 font-mono">{timings.shutterAngleDeg.toFixed(2)}°</span>
             </div>
 
-            {/* Derived: open sub-frame */}
             <div className="flex flex-col gap-1">
               <span className="text-xs text-gray-500">Open Sub-frame</span>
-              <span className="text-xs font-mono text-gray-200">
+              <span className="text-xs text-gray-200 font-mono">
                 {timings.openSlice}{isWrapped ? ' ↩' : ''}
               </span>
             </div>
 
-            <div className="w-px h-8 bg-gray-700 self-center" />
+            <div className="w-px self-stretch bg-gray-700" />
 
-            {/* Offset outputs */}
+            {/* ── Offset method selector ── */}
+            <div className="flex flex-col gap-1.5">
+              <span className="text-xs text-gray-500">Offset Method</span>
+              <div className="flex rounded overflow-hidden border border-gray-700 text-xs">
+                {(['red-sensor', 'evertz-genlock'] as OffsetMethod[]).map((method) => (
+                  <button
+                    key={method}
+                    onClick={() => onUpdate({ ...camera, offsetMethod: method })}
+                    className={`px-2.5 py-1 transition-colors ${
+                      camera.offsetMethod === method
+                        ? 'bg-gray-600 text-gray-100'
+                        : 'bg-gray-800 text-gray-500 hover:text-gray-300'
+                    }`}
+                  >
+                    {method === 'red-sensor' ? 'RED Sensor' : 'Evertz Genlock'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* ── Evertz format selector (only when Evertz selected) ── */}
+            {camera.offsetMethod === 'evertz-genlock' && (
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-gray-500">Genlock Format</label>
+                <select
+                  value={camera.evertzFormatId}
+                  onChange={(e) => onUpdate({ ...camera, evertzFormatId: e.target.value })}
+                  className="bg-gray-800 border border-gray-700 text-xs text-gray-200 rounded px-2 py-1 focus:outline-none focus:border-gray-500"
+                >
+                  <optgroup label="1080p">
+                    {EVERTZ_FORMATS.filter((f) => f.totalLines === 1125).map((f) => (
+                      <option key={f.id} value={f.id}>{f.name}</option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="720p">
+                    {EVERTZ_FORMATS.filter((f) => f.totalLines === 750).map((f) => (
+                      <option key={f.id} value={f.id}>{f.name}</option>
+                    ))}
+                  </optgroup>
+                </select>
+              </div>
+            )}
+
+            <div className="w-px self-stretch bg-gray-700" />
+
+            {/* ── Offset output values ── */}
             <div className="flex flex-col gap-1">
-              <span className="text-xs text-gray-500">Sensor Offset</span>
+              <span className="text-xs text-gray-500">Required Offset</span>
               <span className="text-xs text-gray-200 font-mono">{formatMs(timings.sensorOffsetMs)}</span>
-              <span className="text-xs text-gray-400 font-mono">{formatPs(timings.sensorOffsetPs)}</span>
+
+              {camera.offsetMethod === 'red-sensor' ? (
+                <>
+                  <span className="text-xs text-gray-500 font-mono">{formatPs(timings.sensorOffsetPs)}</span>
+                  <span className="text-xs text-gray-700 leading-tight">SENSOR_SYNC_OFFSET</span>
+                </>
+              ) : evertzResult ? (
+                <>
+                  <span className="text-xs text-gray-400 font-mono">
+                    {evertzResult.lines}L · {evertzResult.pixels}px
+                  </span>
+                  <span className="text-xs text-gray-700">5601 MSC output delay</span>
+                </>
+              ) : null}
             </div>
 
-            <div className="flex flex-col gap-1">
-              <span className="text-xs text-gray-500">RCP2 Angle Value</span>
-              <span className="text-xs text-gray-300 font-mono">{timings.shutterAngleRcp2.toLocaleString()}</span>
-              <span className="text-xs text-gray-600">(deg × 1000)</span>
-            </div>
+            {camera.offsetMethod === 'red-sensor' && (
+              <div className="flex flex-col gap-1">
+                <span className="text-xs text-gray-500">RCP2 Angle Value</span>
+                <span className="text-xs text-gray-300 font-mono">{timings.shutterAngleRcp2.toLocaleString()}</span>
+                <span className="text-xs text-gray-600">deg × 1000</span>
+              </div>
+            )}
 
-            <div className="w-px h-8 bg-gray-700 self-center" />
+            <div className="w-px self-stretch bg-gray-700" />
 
             <button
               onClick={onDelete}
