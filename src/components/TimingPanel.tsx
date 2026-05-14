@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import type { CameraConfig, GlobalConfig, CameraTimings } from '../types';
-import { sliceStartMs, formatPs } from '../lib/timing';
+import { sliceStartMs } from '../lib/timing';
 import { EVERTZ_FORMATS, calculateEvertzOffset } from '../lib/evertz';
 import type { EvertzOffsetResult } from '../lib/evertz';
 
@@ -102,27 +102,23 @@ export default function TimingPanel({ global, cameras, timingsMap }: Props) {
 
               <Row label="Required Offset" value={formatValue(t.sensorOffsetMs)} highlight />
 
-              {cam.offsetMethod === 'red-sensor' ? (
-                <>
-                  <div>
-                    <span className="text-gray-600">Picoseconds</span>
-                    <div className="font-mono text-gray-300 mt-0.5 break-all">
-                      {formatPs(t.sensorOffsetPs)}
+              {cam.offsetMethod === 'red-sensor' ? (() => {
+                const syncShift = Math.round(t.sensorOffsetPs / 13468);
+                const syncShiftTimeUs = syncShift * 0.013468;
+                return (
+                  <>
+                    <Row label="Sync Shift" value={syncShift.toLocaleString()} highlight bold />
+                    <Row label="Sync Shift Time" value={`${syncShiftTimeUs.toFixed(4)}µs`} />
+                    <Row label="Time Unit" value="0.013468µs" />
+                    <div className="border-t border-gray-800 pt-1 mt-1" />
+                    <div>
+                      <span className="text-gray-600 block mb-0.5">RCP2 Angle</span>
+                      <span className="font-mono text-gray-400">{t.shutterAngleRcp2.toLocaleString()}</span>
+                      <span className="text-gray-700 ml-1">× 1000</span>
                     </div>
-                  </div>
-                  <div className="border-t border-gray-800 pt-1 mt-1" />
-                  <div>
-                    <span className="text-gray-600 block mb-0.5">RCP2 Angle</span>
-                    <span className="font-mono text-gray-400">{t.shutterAngleRcp2.toLocaleString()}</span>
-                    <span className="text-gray-700 ml-1">× 1000</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-700 break-all leading-tight font-mono">
-                      SENSOR_SYNC_OFFSET_PIXELS
-                    </span>
-                  </div>
-                </>
-              ) : evertz && fmt ? (
+                  </>
+                );
+              })() : evertz && fmt ? (
                 <>
                   <div className="border-t border-gray-800 pt-1 mt-1" />
                   <div className="mb-1">
@@ -130,7 +126,7 @@ export default function TimingPanel({ global, cameras, timingsMap }: Props) {
                   </div>
                   <Row label="V (frames)" value={String(evertz.frames)} />
                   <Row label="H (lines)" value={String(evertz.lines)} />
-                  <Row label="P (pixels)" value={String(evertz.pixels)} />
+                  <Row label="Fine" value={`${((evertz.pixels / fmt.samplesPerLine) * 100).toFixed(1)}%`} />
                   <div className="border-t border-gray-800 pt-1 mt-1" />
                   <Row label="Pixel period" value={`${evertz.pixelPeriodNs.toFixed(3)}ns`} />
                   <Row label="H-line period" value={`${evertz.linePeriodUs.toFixed(3)}µs`} />
@@ -168,16 +164,18 @@ function Row({
   value,
   dim = false,
   highlight = false,
+  bold = false,
 }: {
   label: string;
   value: string;
   dim?: boolean;
   highlight?: boolean;
+  bold?: boolean;
 }) {
   return (
     <div className="flex justify-between items-center gap-2">
       <span className="text-gray-600 flex-shrink-0">{label}</span>
-      <span className={`font-mono tabular-nums ${dim ? 'text-red-400' : highlight ? 'text-gray-100' : 'text-gray-400'}`}>
+      <span className={`font-mono tabular-nums ${bold ? 'font-bold' : ''} ${dim ? 'text-red-400' : highlight ? 'text-gray-100' : 'text-gray-400'}`}>
         {value}
       </span>
     </div>
