@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { FRAME_RATES } from '../lib/timing';
 import type { GlobalConfig } from '../types';
 
@@ -9,6 +10,19 @@ interface Props {
 export default function GlobalSettings({ config, onChange }: Props) {
   const framePeriodMs = 1000 / config.fps;
   const sliceDurationMs = framePeriodMs / config.sliceCount;
+
+  const [sliceRaw, setSliceRaw] = useState(String(config.sliceCount));
+
+  useEffect(() => {
+    setSliceRaw(String(config.sliceCount));
+  }, [config.sliceCount]);
+
+  function commitSlice(raw: string) {
+    const v = parseInt(raw);
+    const clamped = isNaN(v) ? config.sliceCount : Math.max(1, Math.min(64, v));
+    setSliceRaw(String(clamped));
+    if (clamped !== config.sliceCount) onChange({ ...config, sliceCount: clamped });
+  }
 
   return (
     <div className="flex items-center gap-6 px-4 py-3 bg-gray-950 border-b border-gray-800">
@@ -39,11 +53,13 @@ export default function GlobalSettings({ config, onChange }: Props) {
           type="number"
           min={1}
           max={64}
-          value={config.sliceCount}
+          value={sliceRaw}
           onChange={(e) => {
-            const v = Math.max(1, Math.min(64, parseInt(e.target.value) || 1));
-            onChange({ ...config, sliceCount: v });
+            setSliceRaw(e.target.value);
+            const v = parseInt(e.target.value);
+            if (!isNaN(v)) onChange({ ...config, sliceCount: Math.max(1, Math.min(64, v)) });
           }}
+          onBlur={(e) => commitSlice(e.target.value)}
           className="w-14 bg-gray-800 border border-gray-700 text-gray-200 text-xs rounded px-2 py-1 text-center focus:outline-none focus:border-gray-500"
         />
       </label>

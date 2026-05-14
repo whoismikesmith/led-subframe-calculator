@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useCallback, useEffect } from 'react';
 import type { CameraConfig, GlobalConfig } from './types';
 import { calculateTimings } from './lib/timing';
 import { nextColor } from './lib/cameras';
@@ -12,13 +12,30 @@ const DEFAULT_GLOBAL: GlobalConfig = {
   sliceCount: 20,
 };
 
+const STORAGE_KEY = 'ghostframe-rcp2';
+
+function loadSaved(): { global: GlobalConfig; cameras: CameraConfig[] } | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
 function makeId() {
   return Math.random().toString(36).slice(2, 9);
 }
 
 export default function App() {
-  const [global, setGlobal] = useState<GlobalConfig>(DEFAULT_GLOBAL);
-  const [cameras, setCameras] = useState<CameraConfig[]>([]);
+  const [global, setGlobal] = useState<GlobalConfig>(() => loadSaved()?.global ?? DEFAULT_GLOBAL);
+  const [cameras, setCameras] = useState<CameraConfig[]>(() => loadSaved()?.cameras ?? []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ global, cameras }));
+    } catch {}
+  }, [global, cameras]);
 
   const timingsMap = useMemo(() => {
     const map: Record<string, ReturnType<typeof calculateTimings>> = {};

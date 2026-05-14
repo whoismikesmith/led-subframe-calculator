@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import type { CameraConfig, GlobalConfig, CameraTimings, OffsetMethod } from '../types';
 import { formatMs, formatPs } from '../lib/timing';
 import { EVERTZ_FORMATS, calculateEvertzOffset } from '../lib/evertz';
@@ -16,6 +16,25 @@ interface Props {
 
 export default function CameraRow({ camera, global, timings, onUpdate, onDelete }: Props) {
   const [hoverSlice, setHoverSlice] = useState<number | null>(null);
+  const [captureRaw, setCaptureRaw] = useState(String(camera.captureSlices));
+  const [closeRaw, setCloseRaw] = useState(String(camera.closeSlice));
+
+  useEffect(() => { setCaptureRaw(String(camera.captureSlices)); }, [camera.captureSlices]);
+  useEffect(() => { setCloseRaw(String(camera.closeSlice)); }, [camera.closeSlice]);
+
+  function commitCapture(raw: string) {
+    const v = parseInt(raw);
+    const clamped = isNaN(v) ? camera.captureSlices : Math.max(1, Math.min(global.sliceCount, v));
+    setCaptureRaw(String(clamped));
+    if (clamped !== camera.captureSlices) onUpdate({ ...camera, captureSlices: clamped });
+  }
+
+  function commitClose(raw: string) {
+    const v = parseInt(raw);
+    const clamped = isNaN(v) ? camera.closeSlice : Math.max(1, Math.min(global.sliceCount, v));
+    setCloseRaw(String(clamped));
+    if (clamped !== camera.closeSlice) onUpdate({ ...camera, closeSlice: clamped });
+  }
 
   // Preview: which sub-frames would be captured if hoverSlice were the new closeSlice?
   const previewSlices = useMemo(() => {
@@ -159,11 +178,13 @@ export default function CameraRow({ camera, global, timings, onUpdate, onDelete 
                 type="number"
                 min={1}
                 max={global.sliceCount}
-                value={camera.captureSlices}
+                value={captureRaw}
                 onChange={(e) => {
-                  const v = Math.max(1, Math.min(global.sliceCount, parseInt(e.target.value) || 1));
-                  onUpdate({ ...camera, captureSlices: v });
+                  setCaptureRaw(e.target.value);
+                  const v = parseInt(e.target.value);
+                  if (!isNaN(v)) onUpdate({ ...camera, captureSlices: Math.max(1, Math.min(global.sliceCount, v)) });
                 }}
+                onBlur={(e) => commitCapture(e.target.value)}
                 className="w-16 bg-gray-800 border border-gray-700 text-xs text-gray-200 rounded px-2 py-1 text-center focus:outline-none focus:border-gray-500"
               />
             </div>
@@ -174,11 +195,13 @@ export default function CameraRow({ camera, global, timings, onUpdate, onDelete 
                 type="number"
                 min={1}
                 max={global.sliceCount}
-                value={camera.closeSlice}
+                value={closeRaw}
                 onChange={(e) => {
-                  const v = Math.max(1, Math.min(global.sliceCount, parseInt(e.target.value) || 1));
-                  onUpdate({ ...camera, closeSlice: v });
+                  setCloseRaw(e.target.value);
+                  const v = parseInt(e.target.value);
+                  if (!isNaN(v)) onUpdate({ ...camera, closeSlice: Math.max(1, Math.min(global.sliceCount, v)) });
                 }}
+                onBlur={(e) => commitClose(e.target.value)}
                 className="w-16 bg-gray-800 border border-gray-700 text-xs text-gray-200 rounded px-2 py-1 text-center focus:outline-none focus:border-gray-500"
               />
             </div>

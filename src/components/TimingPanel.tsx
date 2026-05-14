@@ -13,7 +13,14 @@ interface Props {
 }
 
 export default function TimingPanel({ global, cameras, timingsMap }: Props) {
-  const [unit, setUnit] = useState<DisplayUnit>('ms');
+  const [unit, setUnit] = useState<DisplayUnit>(
+    () => (localStorage.getItem('ghostframe-rcp2-unit') as DisplayUnit | null) ?? 'ms'
+  );
+
+  function handleUnitChange(u: DisplayUnit) {
+    setUnit(u);
+    try { localStorage.setItem('ghostframe-rcp2-unit', u); } catch {}
+  }
 
   const sliceDurationMs = (1000 / global.fps) / global.sliceCount;
 
@@ -43,7 +50,7 @@ export default function TimingPanel({ global, cameras, timingsMap }: Props) {
 
         <select
           value={unit}
-          onChange={(e) => setUnit(e.target.value as DisplayUnit)}
+          onChange={(e) => handleUnitChange(e.target.value as DisplayUnit)}
           className="text-xs bg-gray-800 border border-gray-700 text-gray-400 rounded px-1 py-0.5 focus:outline-none"
         >
           <option value="ms">ms</option>
